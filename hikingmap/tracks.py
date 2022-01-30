@@ -17,7 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys, os, tempfile, math
+import os
+import tempfile
 from lxml import etree
 from .coordinate import Coordinate
 
@@ -35,8 +36,10 @@ class Tracks:
             os.remove(self.tempwaypointfile)
 
 
-    # Read all tracks from a given list of gpx files and store them in memory
     def parse_files(self, gpxfiles):
+        '''
+        Read all tracks from a given list of gpx files and store them in memory
+        '''
         for gpxfile in gpxfiles:
             print("Reading file %s" % gpxfile)
 
@@ -84,49 +87,43 @@ class Tracks:
         if not foundtrack:
             print("=> new track %d" % len(self.tracks))
             self.tracks.append(track)
-    
-    
-    # Calculate waypoints after each waypt_distance for every track
+
+
     def calculate_waypoints(self, waypt_distance, length_unit):
+        '''
+        Calculate waypoints after each waypt_distance for every track
+        '''
         for (trackindex, track) in enumerate(self.tracks):
             print("Generating waypoints for track %d: %s - %s" % \
                         (trackindex, track[0].to_string(), track[-1].to_string()))
-            
+
             track_waypoints = list()
-            cumulDistance = 0
+            next_waypt_dist = 0
+            cumul_distance = 0
             prev_coord = track[0]
-            for coord in track:
-                cumulDistance = self.__add_waypoints(track_waypoints, prev_coord, coord, \
-                                                     cumulDistance, waypt_distance, length_unit)
+            for coord in track[1:]:
+                # calculate cumul dist at coord
+                cumul_distance_prev_coord = cumul_distance
+                cumul_distance += prev_coord.distance_haversine(coord, length_unit)
+                # loop as long as dist < cumul dist at coord
+                while next_waypt_dist < cumul_distance:
+                    d = next_waypt_dist - cumul_distance_prev_coord
+                    waypt = prev_coord.calc_waypoint_on_line(coord, d, length_unit)
+                    track_waypoints.append((waypt, ('%.2f' % next_waypt_dist).rstrip('0').rstrip('.')))
+                    next_waypt_dist += waypt_distance
+
                 prev_coord = coord
 
-            print("Total track distance: %.2f %s" % (cumulDistance, length_unit))
-            
+            print("Total track distance: %.2f %s" % (cumul_distance, length_unit))
+
             self.waypoints.append(track_waypoints)
-    
-    
-    # calculate all waypoints between coord1 and coord2 and append them to track_waypoints
-    # returns cumulative distance at coord2
-    def __add_waypoints(self, track_waypoints, coord1, coord2, cumul_dist_at_coord1, \
-                        waypt_distance, length_unit):
-        if coord1.equals(coord2):
-            if cumul_dist_at_coord1 == 0:
-                track_waypoints.append((coord1, "0"))
-            return cumul_dist_at_coord1
-        else:
-            cumul_dist_at_coord2 = \
-                cumul_dist_at_coord1 + coord1.distance_haversine(coord2, length_unit)
-            for dist in range(int(cumul_dist_at_coord1) + 1, int(cumul_dist_at_coord2) + 1):
-                if dist % waypt_distance == 0:
-                    d = dist - cumul_dist_at_coord1
-                    waypt = coord1.calc_waypoint_on_line(coord2, d, length_unit)
-                    track_waypoints.append((waypt, str(dist)))
-
-            return cumul_dist_at_coord2
 
 
-    # Write all waypoints to a temporary gpx file which will be deleted automatically in the destructor
     def write_waypoints_tempfile(self):
+        '''
+        Write all waypoints to a temporary gpx file which will be deleted
+        automatically in the destructor
+        '''
         xsischemaloc_qname = \
             etree.QName('http://www.w3.org/2001/XMLSchema-instance', 'schemaLocation')
         xsischemaloc_value = \
@@ -137,16 +134,15 @@ class Tracks:
         gpxnamespace = { None: 'http://www.topografix.com/GPX/1/0', \
                          'xsi': 'http://www.w3.org/2001/XMLSchema-instance' }
         gpxnode = etree.Element('gpx', gpxattrs, nsmap=gpxnamespace)
-        
+
         for track_waypoints in self.waypoints:
             for (waypoint, description) in track_waypoints:
                 gpxnode.append(waypoint.to_xml('wpt', description))
 
         gpxtree = etree.ElementTree(gpxnode)
-        
+
         (fd, self.tempwaypointfile) = tempfile.mkstemp(prefix = "hikingmap_temp_waypoints", \
                                                        suffix = ".gpx")
         f = os.fdopen(fd, 'wb')
         gpxtree.write(f, encoding='utf-8', xml_declaration=True)
         f.close()
-

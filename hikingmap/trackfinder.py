@@ -16,10 +16,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys, os, math, itertools, tempfile
+import os
+import math
+import itertools
+import tempfile
 from lxml import etree
 from .coordinate import Coordinate
-from .area import Area
 from .page import Page
 
 # global constants
@@ -35,6 +37,12 @@ class TrackFinder:
         self.pages = list()
         self.tempoverviewfile = None
 
+        self.__renderedareas = list()
+        self.__currentpageindex = 1
+        self.__currentpage = None
+        self.__firstpointaccepted = False
+        self.__pointskipped = True
+
 
     def __del__(self):
         # remove temp file
@@ -46,27 +54,26 @@ class TrackFinder:
     # Calculate the minimum amount of pages needed to render all tracks
     def calculate_pages(self, tracks):
         allpermutations = [ tracks.tracks ]
-        
-        if len(tracks.tracks) <= max_tracks_perm_calc:
+
+        if len(tracks.tracks) <= MAX_TRACKS_PERM_CALC:
             print("Calculating track order permutation resulting in a minimum amount of pages")
             print("This may take a while, checking %d track permutations" % \
                         math.factorial(len(tracks.tracks)))
-            
+
             allpermutations = itertools.permutations(tracks.tracks)
         else:
             print("Too many tracks to calculate all track permutations")
-        
+
         min_amount_pages = -1
         for permindex, trackpermutation in enumerate(allpermutations):
-            self.renderedareas = list()
-            self.currentpageindex = 1
-            self.currentpage = None
-            self.firstpointaccepted = False
+            self.__renderedareas = list()
+            self.__currentpageindex = 1
+            self.__currentpage = None
+            self.__firstpointaccepted = False
 
             try:
                 for track in trackpermutation:
-                    #print(track)
-                    self.pointskipped = True
+                    self.__pointskipped = True
                     prev_coord = Coordinate(0.0, 0.0)
                     for coord in track:
                         #print(coord.lon, prev_coord.lon)
@@ -80,57 +87,57 @@ class TrackFinder:
                     self.__debug_exception()
                 raise
 
-            if min_amount_pages == -1 or len(self.renderedareas) < min_amount_pages:
-                min_amount_pages = len(self.renderedareas)
-                self.pages = self.renderedareas
+            if min_amount_pages == -1 or len(self.__renderedareas) < min_amount_pages:
+                min_amount_pages = len(self.__renderedareas)
+                self.pages = self.__renderedareas
                 print("Found track permutation with %d pages" % min_amount_pages)
 
 
     def __add_point(self, prev_coord, coord):
         if not self.__is_point_rendered(coord):
-            if not self.firstpointaccepted:
+            if not self.__firstpointaccepted:
                 prev_coord = self.__add_first_point(coord)
             else:
                 prev_coord = self.__add_next_point(prev_coord, coord)
-            self.pointskipped = False
+            self.__pointskipped = False
         else:
-            self.pointskipped = True
+            self.__pointskipped = True
         return prev_coord
 
 
     def __flush(self):
-        if self.firstpointaccepted:
-            self.currentpage.center_map()
-            self.renderedareas.append(self.currentpage)
-            self.firstpointaccepted = False
+        if self.__firstpointaccepted:
+            self.__currentpage.center_map()
+            self.__renderedareas.append(self.__currentpage)
+            self.__firstpointaccepted = False
 
 
     def __is_point_rendered(self, coord):
         return any(a.minlon <= coord.lon <= a.maxlon and \
-                   a.minlat <= coord.lat <= a.maxlat for a in self.renderedareas)
+                   a.minlat <= coord.lat <= a.maxlat for a in self.__renderedareas)
 
 
     def __add_first_point(self, coord):
-        self.currentpage = Page(self.currentpageindex, \
-                                self.scale, self.pagewidth, self.pageheight, self.pageoverlap, \
-                                self.debugmode)
-        self.currentpage.initialize_first_point(coord)
-        self.currentpageindex += 1
-        self.firstpointaccepted = True
+        self.__currentpage = Page(self.__currentpageindex, \
+                                  self.scale, self.pagewidth, self.pageheight, self.pageoverlap, \
+                                  self.debugmode)
+        self.__currentpage.initialize_first_point(coord)
+        self.__currentpageindex += 1
+        self.__firstpointaccepted = True
         return coord
 
 
     def __add_next_point(self, prev_coord, coord):
         outside_page = self.currentpage.add_next_point(prev_coord, coord)
         if outside_page:
-            self.currentpage.remove_last_point()
-            if not self.pointskipped:
-                border_coord = self.currentpage.calc_border_point(prev_coord, coord)
+            self.__currentpage.remove_last_point()
+            if not self.__pointskipped:
+                border_coord = self.__currentpage.calc_border_point(prev_coord, coord)
                 if border_coord:
-                    self.currentpage.add_next_point(prev_coord, border_coord)
-            self.currentpage.center_map()
-            self.renderedareas.append(self.currentpage)
-            if not self.pointskipped:
+                    self.__currentpage.add_next_point(prev_coord, border_coord)
+            self.__currentpage.center_map()
+            self.__renderedareas.append(self.currentpage)
+            if not self.__pointskipped:
                 if border_coord:
                     self.__add_first_point(border_coord)
                     self.__add_next_point(border_coord, coord)
@@ -138,17 +145,17 @@ class TrackFinder:
                     self.__add_first_point(coord)
             else:
                 self.__add_first_point(coord)
-        
+
         return coord
 
 
     def __debug_exception(self):
         # output already calculated areas
-        for area in self.renderedareas:
+        for area in self.__renderedareas:
             print(area.to_string())
-        
+
         # render overview map for visualization
-        self.pages = self.renderedareas
+        self.pages = self.__renderedareas
         self.__add_overview_page('debug_overview.gpx')
         print("A debug overview map can be generated by running:")
         print(("[rendercommand] --pagewidth %.2f --pageheight %.2f -b debug_overview " + \
@@ -157,14 +164,14 @@ class TrackFinder:
               (self.pagewidth, self.pageheight, \
                self.pages[0].minlon, self.pages[0].minlat, \
                self.pages[0].maxlon, self.pages[0].maxlat))
-    
-    
+
+
     # Add an overview page on index 0 and write a temporary gpx file with the page layout
     # which will be deleted automatically in the destructor
     def add_overview_page(self):
         self.__add_overview_page()
-    
-    
+
+
     def __add_overview_page(self, filename=None):
         xsischemaloc_qname = \
             etree.QName('http://www.w3.org/2001/XMLSchema-instance', 'schemaLocation')
@@ -198,9 +205,9 @@ class TrackFinder:
                 tracksegnode.append(trackpoint.to_xml('trkpt', None))
             tracknode.append(tracksegnode)
             gpxnode.append(tracknode)
-                
+
         gpxtree = etree.ElementTree(gpxnode)
-        
+
         fd = None
         if filename is None:
             (fd, self.tempoverviewfile) = tempfile.mkstemp(prefix = "hikingmap_temp_overview", \
@@ -211,7 +218,7 @@ class TrackFinder:
         f = os.fdopen(fd, 'wb')
         gpxtree.write(f, encoding='utf-8', xml_declaration=True)
         f.close()
-        
+
         overviewpage.center_map()
         self.pages.insert(0, overviewpage)
 
@@ -221,11 +228,11 @@ class TrackFinder:
         if page_order == "rectoverso":
             oldindex = math.floor(len(self.pages) / 2)
             newindex = 1
-            while (oldindex < len(self.pages)):
+            while oldindex < len(self.pages):
                 self.pages.insert(newindex, self.pages.pop(oldindex))
                 oldindex += 1
                 newindex += 2
-            
+
             print("Page order is rectoverso, new order =", end="")
             for page in self.pages:
                 print(" %d" % page.get_page_index(), end="")
@@ -237,22 +244,22 @@ class TrackFinder:
 
             oldindex = len(self.pages) - 1
             newindex = 1
-            while (newindex < oldindex):
+            while newindex < oldindex:
                 self.pages.insert(newindex, self.pages.pop(oldindex))
                 newindex += 2
-            
+
             # this page order requires recto-verso printing over the short edge of the
             # paper
             oldindex = 0
             newindex = 1
-            while (oldindex < len(self.pages)):
+            while oldindex < len(self.pages):
                 self.pages.insert(newindex, self.pages.pop(oldindex))
                 oldindex += 4
                 newindex += 4
 
             print("Page order is book, new order =", end="")
             for page in self.pages:
-                if page != None:
+                if page is not None:
                     print(" %d" % page.get_page_index(), end="")
                 else:
                     print(" X", end="")
@@ -262,11 +269,12 @@ class TrackFinder:
             print("Page order is naturalorder")
 
 
-    def render(self, rendercommand, renderoptions, output_basename, tempwaypointfile, gpxfiles, verbose):
+    def render(self, rendercommand, renderoptions, output_basename, tempwaypointfile, \
+               gpxfiles, verbose):
         for (ordered_index, page) in enumerate(self.pages):
-            if page != None:
+            if page is not None:
                 print(page.to_string())
-                
+
                 outfilename = output_basename + str(ordered_index).zfill(len(str(len(self.pages))))
 
                 if page.pageindex == 0:
@@ -275,4 +283,3 @@ class TrackFinder:
                 else:
                     page.render(rendercommand, renderoptions, outfilename, \
                                 tempwaypointfile, gpxfiles, verbose)
-

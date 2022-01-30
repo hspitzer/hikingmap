@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys, math
+import math
 from lxml import etree
 
 class Coordinate:
@@ -32,9 +32,8 @@ class Coordinate:
             self.lat_radians = lat
 
 
-    def __copy__(self, coord):
-        self.set_lon(coord.lon)
-        self.set_lat(coord.lat)
+    def __copy__(self):
+        return Coordinate(self.lon, self.lat, True)
 
 
     def set_lon(self, lon):
@@ -53,37 +52,42 @@ class Coordinate:
 
     # calculate bearing between self and coord
     def bearing(self, coord):
-        dLon = coord.lon_radians - self.lon_radians
+        d_lon = coord.lon_radians - self.lon_radians
 
-        y = math.sin(dLon) * math.cos(coord.lat_radians)
+        y = math.sin(d_lon) * math.cos(coord.lat_radians)
         x = math.cos(self.lat_radians) * math.sin(coord.lat_radians) - \
-            math.sin(self.lat_radians) * math.cos(coord.lat_radians) * math.cos(dLon)
+            math.sin(self.lat_radians) * math.cos(coord.lat_radians) * math.cos(d_lon)
         return math.atan2(y, x)
 
 
-    def __get_earth_radius(self, length_unit):
+    @staticmethod
+    def __get_earth_radius(length_unit):
         if length_unit == "mi":
             return 3959
         else: # default to km
             return 6371
 
 
-    # calculate distance in km or mi between self and coord
     def distance_haversine(self, coord, length_unit):
-        dLat = coord.lat_radians - self.lat_radians
-        dLon = coord.lon_radians - self.lon_radians
+        '''
+        Calculates distance in km or mi between self and coord
+        '''
+        d_lat = coord.lat_radians - self.lat_radians
+        d_lon = coord.lon_radians - self.lon_radians
 
-        a = math.sin(dLat/2) * math.sin(dLat/2) + \
-            math.sin(dLon/2) * math.sin(dLon/2) * \
+        a = math.sin(d_lat/2) * math.sin(d_lat/2) + \
+            math.sin(d_lon/2) * math.sin(d_lon/2) * \
             math.cos(self.lat_radians) * math.cos(coord.lat_radians)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
         return self.__get_earth_radius(length_unit) * c
 
 
-    # returns the coordinate of the point which is on a given distance
-    # from self in the direction of dest_coord
     def calc_waypoint_on_line(self, dest_coord, distance, length_unit):
+        '''
+        Returns the coordinate of the point which is on a given distance
+        from self in the direction of dest_coord
+        '''
         b = self.bearing(dest_coord)
         earth_radius = self.__get_earth_radius(length_unit)
         return Coordinate(#lon
@@ -105,17 +109,16 @@ class Coordinate:
 
     def to_string(self):
         return str(round(self.lon, 6)) + "," + str(round(self.lat, 6))
-    
-    
+
+
     def to_xml(self, tagname, description):
         wayptattrs = { 'lat':('%.15f' % self.lat), \
                        'lon':('%.15f' % self.lon) }
         wayptnode = etree.Element(tagname, wayptattrs)
-        
+
         if description:
             wayptnamenode = etree.Element('name')
             wayptnamenode.text = description
             wayptnode.append(wayptnamenode)
-        
-        return wayptnode
 
+        return wayptnode
