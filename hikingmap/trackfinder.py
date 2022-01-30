@@ -25,7 +25,7 @@ from .coordinate import Coordinate
 from .page import Page
 
 # global constants
-MAX_TRACKS_PERM_CALC = 6
+max_tracks_perm_calc = 1
 
 class TrackFinder:
     def __init__(self, scale, pagewidth, pageheight, pageoverlap, debugmode):
@@ -76,6 +76,7 @@ class TrackFinder:
                     self.__pointskipped = True
                     prev_coord = Coordinate(0.0, 0.0)
                     for coord in track:
+                        #print(coord.lon, prev_coord.lon)
                         prev_coord = self.__add_point(prev_coord, coord)
                     self.__flush()
             except:
@@ -127,18 +128,21 @@ class TrackFinder:
 
 
     def __add_next_point(self, prev_coord, coord):
-        outside_page = self.__currentpage.add_next_point(coord)
-
+        outside_page = self.currentpage.add_next_point(prev_coord, coord)
         if outside_page:
             self.__currentpage.remove_last_point()
             if not self.__pointskipped:
                 border_coord = self.__currentpage.calc_border_point(prev_coord, coord)
-                self.__currentpage.add_next_point(border_coord)
+                if border_coord:
+                    self.__currentpage.add_next_point(prev_coord, border_coord)
             self.__currentpage.center_map()
-            self.__renderedareas.append(self.__currentpage)
+            self.__renderedareas.append(self.currentpage)
             if not self.__pointskipped:
-                self.__add_first_point(border_coord)
-                self.__add_next_point(border_coord, coord)
+                if border_coord:
+                    self.__add_first_point(border_coord)
+                    self.__add_next_point(border_coord, coord)
+                else:
+                    self.__add_first_point(coord)
             else:
                 self.__add_first_point(coord)
 
