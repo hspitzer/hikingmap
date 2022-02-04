@@ -55,7 +55,7 @@ class TrackFinder:
     def calculate_pages(self, tracks):
         allpermutations = [ tracks.tracks ]
 
-        if len(tracks.tracks) <= MAX_TRACKS_PERM_CALC:
+        if len(tracks.tracks) <= max_tracks_perm_calc:
             print("Calculating track order permutation resulting in a minimum amount of pages")
             print("This may take a while, checking %d track permutations" % \
                         math.factorial(len(tracks.tracks)))
@@ -128,15 +128,15 @@ class TrackFinder:
 
 
     def __add_next_point(self, prev_coord, coord):
-        outside_page = self.currentpage.add_next_point(prev_coord, coord)
+        outside_page = self.__currentpage.add_next_point(coord)
         if outside_page:
             self.__currentpage.remove_last_point()
             if not self.__pointskipped:
                 border_coord = self.__currentpage.calc_border_point(prev_coord, coord)
                 if border_coord:
-                    self.__currentpage.add_next_point(prev_coord, border_coord)
+                    self.__currentpage.add_next_point(border_coord)
             self.__currentpage.center_map()
-            self.__renderedareas.append(self.currentpage)
+            self.__renderedareas.append(self.__currentpage)
             if not self.__pointskipped:
                 if border_coord:
                     self.__add_first_point(border_coord)
